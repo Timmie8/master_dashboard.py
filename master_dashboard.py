@@ -99,7 +99,10 @@ def run_full_analysis(ticker):
         vola = data['Close'].pct_change().tail(14).std() * 100
         swing = round(50 + (change * 6) - (vola * 4), 1)
         atr = (data['High'] - data['Low']).rolling(14).mean().iloc[-1]
+        
         tp, sl = curr_p + (atr * 2.5), curr_p - (atr * 1.5)
+        tp_perc = ((tp / curr_p) - 1) * 100
+        sl_perc = (1 - (sl / curr_p)) * 100
 
         # Status
         if (ensemble > 75 or lstm > 72) and swing > 55:
@@ -111,8 +114,9 @@ def run_full_analysis(ticker):
 
         return {
             "T": ticker, "P": curr_p, "C": change, "E": ensemble, "L": lstm, "S": swing,
-            "PS": pine_score, "TP": tp, "SL": sl, "ST": rec, "COL": col, "ICO": ico,
-            "EARN": get_earnings_date(ticker), "DATA": data, "PRED": pred
+            "PS": pine_score, "TP": tp, "SL": sl, "TP_P": tp_perc, "SL_P": sl_perc,
+            "ST": rec, "COL": col, "ICO": ico, "EARN": get_earnings_date(ticker), 
+            "DATA": data, "PRED": pred
         }
     except: return None
 
@@ -144,7 +148,7 @@ else:
             st.info("Watchlist is leeg.")
             return
 
-        # --- GRID WATCHLIST (Met Swing Score) ---
+        # --- GRID WATCHLIST ---
         st.subheader("🔄 Live Portfolio Grid")
         num_cols = 4
         wl = st.session_state.watchlist
@@ -160,8 +164,11 @@ else:
                             <h2 style="color:{res['COL']}; margin:5px 0;">{res['ICO']} {res['ST']}</h2>
                             <p style="margin:0; font-weight:bold; font-size:1.1em;">${res['P']:.2f} ({res['C']:+.2f}%)</p>
                             <p style="margin:5px 0 0 0; font-size:0.75em; color:#666;">
-                                Ensemble: {res['E']}% | LSTM: {res['L']}% | Swing: {res['S']}
+                                E: {res['E']}% | L: {res['L']}% | S: {res['S']}
                             </p>
+                            <div style="margin-top:5px; font-size:0.7em; color:{res['COL']}; opacity:0.8;">
+                                TP: +{res['TP_P']:.1f}% | SL: -{res['SL_P']:.1f}%
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -200,16 +207,17 @@ else:
                         <h3 style="color:{res['COL']}; margin-top:0;">Trade Guard Pro</h3>
                         <p style="color:#888;">Ticker: <b>{res['T']}</b></p>
                         <hr style="border-color:#333;">
-                        <h4 style="color:#39d353; margin-bottom:5px;">🎯 Take Profit</h4>
-                        <h2 style="margin:0;">${res['TP']:.2f}</h2>
+                        <h4 style="color:#39d353; margin-bottom:0px;">🎯 Take Profit</h4>
+                        <h2 style="margin:0;">${res['TP']:.2f} <span style="font-size:0.5em; color:#aaa;">(+{res['TP_P']:.2f}%)</span></h2>
                         <br>
-                        <h4 style="color:#f85149; margin-bottom:5px;">🛑 Stop Loss</h4>
-                        <h2 style="margin:0;">${res['SL']:.2f}</h2>
+                        <h4 style="color:#f85149; margin-bottom:0px;">🛑 Stop Loss</h4>
+                        <h2 style="margin:0;">${res['SL']:.2f} <span style="font-size:0.5em; color:#aaa;">(-{res['SL_P']:.2f}%)</span></h2>
                         <hr style="border-color:#333;">
                         <p style="margin:0;">📅 <b>Earnings:</b> {res['EARN']}</p>
                     </div>
                     """, unsafe_allow_html=True)
 
     show_dashboard()
+
 
 
