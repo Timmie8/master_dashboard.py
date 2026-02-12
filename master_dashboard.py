@@ -20,7 +20,6 @@ st.markdown("""
     .stButton>button { background-color: #222 !important; color: white !important; border: 1px solid #444 !important; font-weight: bold; width: 100%; }
     .stButton>button:hover { border-color: #39d353 !important; color: #39d353 !important; }
     .metric-container { background-color: #111; padding: 20px; border-radius: 10px; border: 1px solid #333; }
-    /* Verwijder standaard dataframe styling voor betere dark mode match */
     [data-testid="stDataFrame"] { background-color: #000 !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -87,7 +86,7 @@ def run_full_analysis(ticker):
         pred = float(reg.predict(np.array([[len(y)]]))[0][0])
         ensemble = int(72 + (12 if pred > curr_p else -8))
         
-        # 2. LSTM Trend Score (Momentum)
+        # 2. LSTM Trend Score
         lstm = int(65 + (data['Close'].iloc[-5:].pct_change().sum() * 150))
         
         # 3. Pine Script AI Engine (EMA Trend)
@@ -102,7 +101,7 @@ def run_full_analysis(ticker):
         atr = (data['High'] - data['Low']).rolling(14).mean().iloc[-1]
         tp, sl = curr_p + (atr * 2.5), curr_p - (atr * 1.5)
 
-        # Hoofdstatus
+        # Status
         if (ensemble > 75 or lstm > 72) and swing > 55:
             rec, col, ico = "BUY", "#39d353", "🚀"
         elif ensemble < 65 or lstm < 60:
@@ -126,7 +125,7 @@ else:
 
     with st.sidebar:
         st.title("🛡️ SST Terminal")
-        input_string = st.text_area("Tickers toevoegen (bijv: AAPL, NVDA)")
+        input_string = st.text_area("Tickers toevoegen (AAPL, NVDA)")
         if st.button("➕ Voeg toe"):
             new = [t.strip().upper() for t in input_string.split(',') if t.strip()]
             st.session_state.watchlist = list(dict.fromkeys(st.session_state.watchlist + new))
@@ -142,10 +141,10 @@ else:
     @st.fragment(run_every=30)
     def show_dashboard():
         if not st.session_state.watchlist:
-            st.info("Watchlist is leeg. Voeg tickers toe in de sidebar.")
+            st.info("Watchlist is leeg.")
             return
 
-        # --- GRID WATCHLIST ---
+        # --- GRID WATCHLIST (Met Swing Score) ---
         st.subheader("🔄 Live Portfolio Grid")
         num_cols = 4
         wl = st.session_state.watchlist
@@ -161,16 +160,16 @@ else:
                             <h2 style="color:{res['COL']}; margin:5px 0;">{res['ICO']} {res['ST']}</h2>
                             <p style="margin:0; font-weight:bold; font-size:1.1em;">${res['P']:.2f} ({res['C']:+.2f}%)</p>
                             <p style="margin:5px 0 0 0; font-size:0.75em; color:#666;">
-                                E: {res['E']}% | L: {res['L']}% | P: {res['PS']}%
+                                Ensemble: {res['E']}% | LSTM: {res['L']}% | Swing: {res['S']}
                             </p>
                         </div>
                         """, unsafe_allow_html=True)
 
         st.markdown("---")
         
-        # --- DETAIL ANALYSE MET GEKLEURDE TABEL ---
+        # --- DETAIL ANALYSE ---
         st.subheader("🔍 Strategie Scoreboard & Analyse")
-        sel = st.selectbox("Selecteer aandeel voor diepgaande inspectie:", st.session_state.watchlist)
+        sel = st.selectbox("Selecteer aandeel voor inspectie:", st.session_state.watchlist)
         
         if sel:
             res = run_full_analysis(sel)
@@ -179,15 +178,13 @@ else:
                 with c1:
                     st.line_chart(res['DATA']['Close'], use_container_width=True)
                     
-                    # Dataframe voorbereiden
                     df_data = pd.DataFrame([
-                        {"Strategie": "AI Ensemble Learning", "Score": res['E'], "Drempel": 75, "Type": "AI"},
-                        {"Strategie": "LSTM Trend Predictor", "Score": res['L'], "Drempel": 72, "Type": "AI"},
-                        {"Strategie": "Pine AI Engine (EMA)", "Score": res['PS'], "Drempel": 65, "Type": "Indicator"},
-                        {"Strategie": "Swing Momentum Score", "Score": res['S'], "Drempel": 58, "Type": "Technical"}
+                        {"Strategie": "AI Ensemble Learning", "Score": res['E'], "Drempel": 75},
+                        {"Strategie": "LSTM Trend Predictor", "Score": res['L'], "Drempel": 72},
+                        {"Strategie": "Pine AI Engine (EMA)", "Score": res['PS'], "Drempel": 65},
+                        {"Strategie": "Swing Momentum Score", "Score": res['S'], "Drempel": 58}
                     ])
 
-                    # Styling functie voor de tabel
                     def apply_color(row):
                         if row['Score'] >= row['Drempel']:
                             return ['background-color: #06402B; color: #39d353; font-weight: bold'] * len(row)
@@ -195,11 +192,7 @@ else:
                             return ['background-color: #440505; color: #f85149'] * len(row)
                         return [''] * len(row)
 
-                    st.dataframe(
-                        df_data.style.apply(apply_color, axis=1),
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    st.dataframe(df_data.style.apply(apply_color, axis=1), use_container_width=True, hide_index=True)
                 
                 with c2:
                     st.markdown(f"""
@@ -214,11 +207,9 @@ else:
                         <h2 style="margin:0;">${res['SL']:.2f}</h2>
                         <hr style="border-color:#333;">
                         <p style="margin:0;">📅 <b>Earnings:</b> {res['EARN']}</p>
-                        <p style="font-size:0.8em; color:#555; margin-top:15px;">
-                            De Exit Engine gebruikt een 2.5x ATR voor de Target en een 1.5x ATR voor de Stop Loss.
-                        </p>
                     </div>
                     """, unsafe_allow_html=True)
 
     show_dashboard()
+
 
