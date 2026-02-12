@@ -12,6 +12,7 @@ from datetime import datetime
 # --- 1. CONFIGURATIE & CSS ---
 st.set_page_config(page_title="AI Master Strategy Terminal", layout="wide")
 
+# Harde Black-Mode Styling
 st.markdown("""
     <style>
     .stApp { background-color: #000000 !important; color: #ffffff !important; }
@@ -20,14 +21,16 @@ st.markdown("""
     .stButton>button { background-color: #222 !important; color: white !important; border: 1px solid #444 !important; font-weight: bold; width: 100%; }
     .stButton>button:hover { border-color: #39d353 !important; color: #39d353 !important; }
     .metric-container { background-color: #111; padding: 15px; border-radius: 10px; border: 1px solid #333; }
-    .buy-row { border: 2px solid #39d353 !important; background-color: rgba(57, 211, 83, 0.05); }
+    /* Styling voor de tabel */
+    .stTable { background-color: #050505 !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGIN SYSTEEM (Uit Code 2) ---
+# --- 2. LOGIN SYSTEEM ---
 USERS = {
     "admin@swingstocktraders.com": "SST2024!",
-    "winstmaken@gmx.com": "winstmaken8"
+    "winstmaken@gmx.com": "winstmaken8",
+    "member@test.nl": "Welkom01"
 }
 
 if 'logged_in' not in st.session_state:
@@ -36,8 +39,7 @@ if 'logged_in' not in st.session_state:
 def login_screen():
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.image("https://via.placeholder.com/150?text=SST+LOGO", width=100) # Voeg eventueel je logo toe
-        st.title("🔐 SST Leden Login")
+        st.markdown("<h2 style='text-align: center;'>🔐 SST Leden Login</h2>", unsafe_allow_html=True)
         email = st.text_input("E-mailadres")
         password = st.text_input("Wachtwoord", type="password")
         if st.button("Inloggen"):
@@ -48,7 +50,7 @@ def login_screen():
             else:
                 st.error("Onjuist e-mailadres of wachtwoord.")
 
-# --- 3. HULPFUNCTIES & DATA (Uit Code 1 & Pine Script) ---
+# --- 3. PERSISTENTIE & SCRAPERS ---
 def save_watchlist(watchlist):
     with open("watchlist_data.txt", "w") as f:
         f.write(",".join(watchlist))
@@ -58,7 +60,7 @@ def load_watchlist():
         with open("watchlist_data.txt", "r") as f:
             data = f.read().strip()
             return data.split(",") if data else []
-    return ["AAPL", "NVDA", "TSLA"]
+    return ["AAPL", "NVDA", "TSLA", "MSFT"]
 
 def get_earnings_date(ticker):
     try:
@@ -70,78 +72,75 @@ def get_earnings_date(ticker):
         return match.group(1).strip().split('-')[0].strip() if match else "N/A"
     except: return "N/A"
 
-def calculate_pine_logic(df):
-    """Vertaalt Pine Script Code 3 & 4 naar Python"""
-    # EMA's
-    ema20 = df['Close'].ewm(span=20, adjust=False).mean()
-    ema50 = df['Close'].ewm(span=50, adjust=False).mean()
-    ema200 = df['Close'].ewm(span=200, adjust=False).mean()
-    
-    curr = df['Close'].iloc[-1]
-    
-    # Trend Score
-    bull_score = (10 if curr > ema20.iloc[-1] else 0) + (10 if ema20.iloc[-1] > ema50.iloc[-1] else 0)
-    # Exit Engine (Code 4)
-    atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
-    long_tp = curr + (atr * 2.5)
-    long_sl = curr - (atr * 1.5)
-    
-    return {"ai_score": 50 + (bull_score * 2), "tp": long_tp, "sl": long_sl}
-
+# --- 4. AI & PINE SCRIPT LOGICA ---
 def run_full_analysis(ticker):
     try:
         data = yf.Ticker(ticker).history(period="200d")
         if data.empty: return None
         
         curr_p = float(data['Close'].iloc[-1])
-        change = ((curr_p / data['Close'].iloc[-2]) - 1) * 100
+        prev_p = float(data['Close'].iloc[-2])
+        change = ((curr_p / prev_p) - 1) * 100
         
-        # Lineaire Regressie (Code 1 & 2)
+        # --- Pine Script Code 3 & 4 Vertaling ---
+        # EMA's
+        ema20 = data['Close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = data['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
+        ema200 = data['Close'].ewm(span=200, adjust=False).mean().iloc[-1]
+        
+        # Trend Score (Code 3)
+        bull_trend = (10 if curr_p > ema20 else 0) + (10 if ema20 > ema50 else 0) + (10 if ema50 > ema200 else 0)
+        ai_pine_score = 50 + (bull_trend * 1.5)
+        
+        # Exit Engine (Code 4)
+        atr = (data['High'] - data['Low']).rolling(14).mean().iloc[-1]
+        long_tp = curr_p + (atr * 2.5)
+        long_sl = curr_p - (atr * 1.5)
+
+        # --- Lineaire Regressie (Code 1 & 2) ---
         y = data['Close'].values.reshape(-1, 1)
         X = np.array(range(len(y))).reshape(-1, 1)
         reg = LinearRegression().fit(X, y)
         pred = float(reg.predict(np.array([[len(y)]]))[0][0])
         
-        # Pine Script Logica integratie
-        pine = calculate_pine_logic(data)
-        
-        # Scores (Gecombineerd)
+        # Ensemble Score
         ensemble = int(72 + (12 if pred > curr_p else -8))
         
+        # Status Bepaling
         status, col, ico = "HOLD", "#d29922", "⏳"
-        if ensemble > 75 and pine['ai_score'] > 60:
+        if (ensemble > 75 or ai_pine_score > 75):
             status, col, ico = "BUY", "#39d353", "🚀"
         elif ensemble < 65:
             status, col, ico = "AVOID", "#f85149", "⚠️"
 
         return {
             "T": ticker, "P": curr_p, "C": change, "E": ensemble, 
-            "AI_PINE": pine['ai_score'], "TP": pine['tp'], "SL": pine['sl'],
+            "AI_PINE": ai_pine_score, "TP": long_tp, "SL": long_sl,
             "ST": status, "COL": col, "ICO": ico, "EARN": get_earnings_date(ticker),
             "DATA": data, "PRED": pred
         }
     except: return None
 
-# --- 4. HOOFD PROGRAMMA ---
+# --- 5. HOOFD DASHBOARD ---
 if not st.session_state.logged_in:
     login_screen()
 else:
     if 'watchlist' not in st.session_state:
         st.session_state.watchlist = load_watchlist()
 
-    # Sidebar Beheer
+    # Sidebar
     with st.sidebar:
-        st.header("📋 Portfolio Beheer")
-        st.write(f"👤 {st.session_state.user_email}")
+        st.title("🛡️ SST Terminal")
+        st.write(f"Ingelogd: **{st.session_state.user_email}**")
         
-        new_input = st.text_input("Voeg Ticker(s) toe (comma sep)")
-        if st.button("➕ Toevoegen"):
-            tickers = [t.strip().upper() for t in new_input.split(",") if t.strip()]
-            st.session_state.watchlist = list(dict.fromkeys(st.session_state.watchlist + tickers))
+        input_string = st.text_area("Voeg Tickers toe (bijv: AAPL, TSLA)")
+        if st.button("➕ Toevoegen aan lijst"):
+            new_tickers = [t.strip().upper() for t in input_string.split(',') if t.strip()]
+            st.session_state.watchlist = list(dict.fromkeys(st.session_state.watchlist + new_tickers))
             save_watchlist(st.session_state.watchlist)
             st.rerun()
             
-        if st.button("🗑️ Lijst wissen"):
+        if st.button("🗑️ Wis Watchlist"):
             st.session_state.watchlist = []
             save_watchlist([])
             st.rerun()
@@ -150,58 +149,75 @@ else:
             st.session_state.logged_in = False
             st.rerun()
 
-    st.title("🏹 AI Master Strategy Terminal")
+    st.title("🏹 AI Strategy Master Terminal")
 
-    # Live Watchlist Sectie (Code 1 Fragment)
+    # --- GRID WATCHLIST (Onbeperkt aandelen tonen) ---
     @st.fragment(run_every=30)
     def show_live_dashboard():
         if not st.session_state.watchlist:
-            st.info("Voeg tickers toe in de sidebar.")
+            st.info("Je watchlist is leeg. Voeg tickers toe in de sidebar.")
             return
 
-        cols = st.columns(len(st.session_state.watchlist[:5])) # Toon eerste 5 als kaarten
-        for i, ticker in enumerate(st.session_state.watchlist[:5]):
-            res = run_full_analysis(ticker)
-            if res:
-                with cols[i]:
-                    st.markdown(f"""
-                    <div style="border: 1px solid {res['COL']}; padding: 10px; border-radius: 10px; background-color: #050505; text-align: center;">
-                        <h3 style="margin:0;">{res['T']}</h3>
-                        <h2 style="color:{res['COL']}; margin:0;">{res['ICO']} {res['ST']}</h2>
-                        <p style="margin:0;">${res['P']:.2f} ({res['C']:+.2f}%)</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+        st.subheader("🔄 Live Watchlist Grid")
+        num_cols = 4 # Aantal blokken per rij
+        watchlist = st.session_state.watchlist
+        
+        for i in range(0, len(watchlist), num_cols):
+            cols = st.columns(num_cols)
+            batch = watchlist[i:i + num_cols]
+            for j, ticker in enumerate(batch):
+                res = run_full_analysis(ticker)
+                if res:
+                    with cols[j]:
+                        st.markdown(f"""
+                        <div style="border: 1px solid {res['COL']}; padding: 12px; border-radius: 10px; background-color: #0a0a0a; text-align: center; margin-bottom: 15px;">
+                            <h4 style="margin:0; color: #aaa;">{res['T']}</h4>
+                            <h2 style="color:{res['COL']}; margin:5px 0;">{res['ICO']} {res['ST']}</h2>
+                            <p style="margin:0; font-size: 1.1em; font-weight: bold;">${res['P']:.2f}</p>
+                            <p style="margin:0; color: {res['COL']}; font-size: 0.9em;">{res['C']:+.2f}%</p>
+                            <div style="margin-top:8px; font-size: 0.75em; color: #666; border-top: 1px solid #222; padding-top: 5px;">
+                                AI: {res['E']}% | Pine: {res['AI_PINE']:.0f}%
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
         st.markdown("---")
         
-        # Selectie voor Detail Analyse (Code 2 Logica)
-        selected_stock = st.selectbox("Selecteer aandeel voor diepgaande AI analyse:", st.session_state.watchlist)
+        # --- DETAIL ANALYSE ---
+        st.subheader("🔍 Gedetailleerde Analyse")
+        selected_stock = st.selectbox("Selecteer aandeel uit lijst:", st.session_state.watchlist)
+        
         if selected_stock:
             res = run_full_analysis(selected_stock)
             if res:
                 col_left, col_right = st.columns([2, 1])
                 
                 with col_left:
-                    st.subheader(f"Grafiek: {selected_stock}")
-                    st.line_chart(res['DATA']['Close'])
+                    st.line_chart(res['DATA']['Close'], use_container_width=True)
                     
-                    # Strategie Tabel (Code 2)
-                    st.subheader("🚀 Comprehensive Strategy Scoreboard")
-                    strategies = [
-                        {"Methode": "AI Ensemble Learning", "Score": res['E'], "Status": "BUY" if res['E'] >= 75 else "HOLD"},
-                        {"Methode": "Pine AI Engine (Code 3)", "Score": res['AI_PINE'], "Status": "BUY" if res['AI_PINE'] >= 60 else "HOLD"},
-                        {"Methode": "Linear Regression", "Score": 80 if res['PRED'] > res['P'] else 40, "Status": "UP" if res['PRED'] > res['P'] else "DOWN"},
-                    ]
-                    st.table(pd.DataFrame(strategies))
+                    # Strategie Tabel
+                    df_strat = pd.DataFrame([
+                        {"Methode": "AI Ensemble Learning", "Score": f"{res['E']}%", "Status": "BUY" if res['E'] >= 75 else "HOLD"},
+                        {"Methode": "Pine Script AI Engine", "Score": f"{res['AI_PINE']:.0f}%", "Status": "BUY" if res['AI_PINE'] >= 75 else "HOLD"},
+                        {"Methode": "Linear Regression", "Score": "Bullish" if res['PRED'] > res['P'] else "Bearish", "Status": "UP" if res['PRED'] > res['P'] else "DOWN"},
+                        {"Methode": "Volatility Exit", "Score": "N/A", "Status": "READY", "Target": f"${res['TP']:.2f}"}
+                    ])
+                    st.table(df_strat)
 
                 with col_right:
                     st.markdown(f"""
                     <div class="metric-container" style="border-left: 5px solid {res['COL']};">
-                        <h4>AI Exit Engine (Code 4)</h4>
-                        <p><b>Target (TP):</b> <span style="color:#39d353;">${res['TP']:.2f}</span></p>
-                        <p><b>Stop Loss (SL):</b> <span style="color:#f85149;">${res['SL']:.2f}</span></p>
-                        <hr>
-                        <p><b>Volgende Earnings:</b><br>{res['EARN']}</p>
+                        <h3 style="color: {res['COL']};">Market Intel</h3>
+                        <p style="color: #888;">Ticker: <b>{res['T']}</b></p>
+                        <hr style="border-color: #333;">
+                        <h4 style="color: #39d353;">🚀 AI Exit Engine</h4>
+                        <p style="margin: 5px 0;"><b>Take Profit:</b> <span style="font-size: 1.2em;">${res['TP']:.2f}</span></p>
+                        <p style="margin: 5px 0;"><b>Stop Loss:</b> <span style="font-size: 1.2em; color: #f85149;">${res['SL']:.2f}</span></p>
+                        <hr style="border-color: #333;">
+                        <p>📅 <b>Earnings Date:</b><br>{res['EARN']}</p>
+                        <p style="font-size: 0.8em; color: #555; margin-top: 20px;">
+                            * Pine Script Exit Engine berekent TP/SL op basis van 2.5x en 1.5x ATR.
+                        </p>
                     </div>
                     """, unsafe_allow_html=True)
 
